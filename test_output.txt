@@ -1,0 +1,20 @@
+time="2026-03-11T19:38:38+03:00" level=warning msg="\\\\wsl.localhost\\Ubuntu\\home\\pc\\src\\project\\docker-compose.test.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+Attaching to test-1, test_postgres
+test_postgres  | 
+test_postgres  | PostgreSQL Database directory appears to contain a database; Skipping initialization
+test_postgres  | 
+test_postgres  | 2026-03-11 16:38:39.351 UTC [1] LOG:  starting PostgreSQL 15.17 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+test_postgres  | 2026-03-11 16:38:39.351 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+test_postgres  | 2026-03-11 16:38:39.351 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+test_postgres  | 2026-03-11 16:38:39.367 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+test_postgres  | 2026-03-11 16:38:39.382 UTC [30] LOG:  database system was shut down at 2026-03-11 16:36:34 UTC
+test_postgres  | 2026-03-11 16:38:39.393 UTC [1] LOG:  database system is ready to accept connections
+test-1         | fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main/x86_64/APKINDEX.tar.gz
+test-1         | fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/community/x86_64/APKINDEX.tar.gz
+test-1         | OK: 20 MiB in 27 packages
+test-1         | # organizational-api/internal/handlers [organizational-api/internal/handlers.test]
+test-1         | internal/handlers/department_handler_test.go:516:5: hr declared and not used
+test-1         | internal/handlers/department_handler_test.go:517:5: employee declared and not used
+test-1         | FAIL	organizational-api/internal/handlers [build failed]
+test-1         | FAIL
+[Ktest-1 exited with code 1

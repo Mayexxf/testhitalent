@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: orgstructure_db
+    environment:
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB:       orgstructure
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orgstructure"]
+      interval:   5s
+      timeout:    3s
+      retries:    12
+      start_period: 8s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orgstructure_api
+    environment:
+      DB_HOST:     postgres
+      DB_PORT:     5432
+      DB_USER:     postgres
+      DB_PASSWORD: postgres
+      DB_NAME:     orgstructure
+      DB_SSLMODE:  disable
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
