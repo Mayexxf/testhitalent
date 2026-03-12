@@ -52,7 +52,7 @@ func (h *DepartmentHandler) CreateDepartment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dept, err := h.service.CreateDepartment(req.Name, req.ParentID)
+	dept, err := h.service.CreateDepartment(r.Context(), req.Name, req.ParentID)
 	if err != nil {
 		logger.Error.Printf("Failed to create department: %v", err)
 		if strings.Contains(err.Error(), "not found") {
@@ -101,7 +101,7 @@ func (h *DepartmentHandler) GetDepartment(w http.ResponseWriter, r *http.Request
 		includeEmployees = includeStr == "true"
 	}
 
-	result, err := h.service.GetDepartment(id, depth, includeEmployees)
+	result, err := h.service.GetDepartment(r.Context(), id, depth, includeEmployees)
 	if err != nil {
 		logger.Error.Printf("Failed to get department: %v", err)
 		if strings.Contains(err.Error(), "not found") {
@@ -137,7 +137,7 @@ func (h *DepartmentHandler) UpdateDepartment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dept, err := h.service.UpdateDepartment(id, req.Name, req.ParentID)
+	dept, err := h.service.UpdateDepartment(r.Context(), id, req.Name, req.ParentID)
 	if err != nil {
 		logger.Error.Printf("Failed to update department: %v", err)
 		if strings.Contains(err.Error(), "not found") {
@@ -185,7 +185,7 @@ func (h *DepartmentHandler) DeleteDepartment(w http.ResponseWriter, r *http.Requ
 		reassignToDeptID = &reassignID
 	}
 
-	err = h.service.DeleteDepartment(id, mode, reassignToDeptID)
+	err = h.service.DeleteDepartment(r.Context(), id, mode, reassignToDeptID)
 	if err != nil {
 		logger.Error.Printf("Failed to delete department: %v", err)
 		if strings.Contains(err.Error(), "not found") {
@@ -238,7 +238,7 @@ func (h *DepartmentHandler) CreateEmployee(w http.ResponseWriter, r *http.Reques
 		hiredAt = sql.NullTime{Time: t, Valid: true}
 	}
 
-	emp, err := h.service.CreateEmployee(deptID, req.FullName, req.Position, hiredAt)
+	emp, err := h.service.CreateEmployee(r.Context(), deptID, req.FullName, req.Position, hiredAt)
 	if err != nil {
 		logger.Error.Printf("Failed to create employee: %v", err)
 		if strings.Contains(err.Error(), "not found") {

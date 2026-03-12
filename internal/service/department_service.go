@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"organizational-api/internal/models"
@@ -11,18 +12,18 @@ import (
 )
 
 type DepartmentService struct {
-	deptRepo repository.DepartmentRepository
-	empRepo  repository.EmployeeRepository
+	deptRepo repository.DepartmentRepo
+	empRepo  repository.EmployeeRepo
 }
 
-func NewDepartmentService(deptRepo repository.DepartmentRepository, empRepo repository.EmployeeRepository) DepartmentService {
+func NewDepartmentService(deptRepo repository.DepartmentRepo, empRepo repository.EmployeeRepo) DepartmentService {
 	return DepartmentService{
 		deptRepo: deptRepo,
 		empRepo:  empRepo,
 	}
 }
 
-func (s *DepartmentService) CreateDepartment(name string, parentID *int) (*models.Department, error) {
+func (s *DepartmentService) CreateDepartment(ctx context.Context, name string, parentID *int) (*models.Department, error) {
 	// Validate name
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 200 {
@@ -31,7 +32,7 @@ func (s *DepartmentService) CreateDepartment(name string, parentID *int) (*model
 
 	// Check if parent exists
 	if parentID != nil {
-		_, err := s.deptRepo.GetByID(*parentID)
+		_, err := s.deptRepo.GetByID(ctx, *parentID)
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return nil, fmt.Errorf("parent department not found")
@@ -45,14 +46,14 @@ func (s *DepartmentService) CreateDepartment(name string, parentID *int) (*model
 		ParentID: parentID,
 	}
 
-	if err := s.deptRepo.Create(dept); err != nil {
+	if err := s.deptRepo.Create(ctx, dept); err != nil {
 		return nil, err
 	}
 
 	return dept, nil
 }
 
-func (s *DepartmentService) GetDepartment(id int, depth int, includeEmployees bool) (map[string]interface{}, error) {
+func (s *DepartmentService) GetDepartment(ctx context.Context, id int, depth int, includeEmployees bool) (map[string]interface{}, error) {
 	if depth < 1 {
 		depth = 1
 	}
@@ -60,15 +61,7 @@ func (s *DepartmentService) GetDepartment(id int, depth int, includeEmployees bo
 		depth = 5
 	}
 
-	var dept *models.Department
-	var err error
-
-	if includeEmployees {
-		dept, err = s.deptRepo.GetByIDWithEmployees(id)
-	} else {
-		dept, err = s.deptRepo.GetByID(id)
-	}
-
+	dept, err := s.deptRepo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("department not found")
@@ -76,11 +69,16 @@ func (s *DepartmentService) GetDepartment(id int, depth int, includeEmployees bo
 		return nil, err
 	}
 
-	result := s.buildDepartmentTree(dept, depth, includeEmployees, 1)
+	if includeEmployees {
+		employees, _ := s.empRepo.GetByDepartmentID(ctx, id)
+		dept.Employees = employees
+	}
+
+	result := s.buildDepartmentTree(ctx, dept, depth, includeEmployees, 1)
 	return result, nil
 }
 
-func (s *DepartmentService) buildDepartmentTree(dept *models.Department, maxDepth int, includeEmployees bool, currentDepth int) map[string]interface{} {
+func (s *DepartmentService) buildDepartmentTree(ctx context.Context, dept *models.Department, maxDepth int, includeEmployees bool, currentDepth int) map[string]interface{} {
 	result := map[string]interface{}{
 		"id":         dept.ID,
 		"name":       dept.Name,
@@ -109,17 +107,15 @@ func (s *DepartmentService) buildDepartmentTree(dept *models.Department, maxDept
 	}
 
 	if currentDepth < maxDepth {
-		children, err := s.deptRepo.GetChildren(dept.ID)
+		children, err := s.deptRepo.GetChildren(ctx, dept.ID, maxDepth-currentDepth)
 		if err == nil && len(children) > 0 {
 			childrenData := make([]map[string]interface{}, 0)
 			for _, child := range children {
 				if includeEmployees {
-					childWithEmployees, _ := s.deptRepo.GetByIDWithEmployees(child.ID)
-					if childWithEmployees != nil {
-						child = *childWithEmployees
-					}
+					employees, _ := s.empRepo.GetByDepartmentID(ctx, child.ID)
+					child.Employees = employees
 				}
-				childData := s.buildDepartmentTree(&child, maxDepth, includeEmployees, currentDepth+1)
+				childData := s.buildDepartmentTree(ctx, child, maxDepth, includeEmployees, currentDepth+1)
 				childrenData = append(childrenData, childData)
 			}
 			result["children"] = childrenData
@@ -131,8 +127,8 @@ func (s *DepartmentService) buildDepartmentTree(dept *models.Department, maxDept
 	return result
 }
 
-func (s *DepartmentService) UpdateDepartment(id int, name *string, parentID *int) (*models.Department, error) {
-	dept, err := s.deptRepo.GetByID(id)
+func (s *DepartmentService) UpdateDepartment(ctx context.Context, id int, name *string, parentID *int) (*models.Department, error) {
+	dept, err := s.deptRepo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("department not found")
@@ -156,7 +152,7 @@ func (s *DepartmentService) UpdateDepartment(id int, name *string, parentID *int
 
 		// Check if new parent exists
 		if *parentID != 0 {
-			_, err := s.deptRepo.GetByID(*parentID)
+			_, err := s.deptRepo.GetByID(ctx, *parentID)
 			if err != nil {
 				if err == gorm.ErrRecordNotFound {
 					return nil, fmt.Errorf("parent department not found")
@@ -165,7 +161,7 @@ func (s *DepartmentService) UpdateDepartment(id int, name *string, parentID *int
 			}
 
 			// Check for circular dependency
-			if err := s.checkCircularDependency(id, *parentID); err != nil {
+			if err := s.checkCircularDependency(ctx, id, *parentID); err != nil {
 				return nil, err
 			}
 		}
@@ -177,14 +173,14 @@ func (s *DepartmentService) UpdateDepartment(id int, name *string, parentID *int
 		}
 	}
 
-	if err := s.deptRepo.Update(dept); err != nil {
+	if err := s.deptRepo.Update(ctx, dept); err != nil {
 		return nil, err
 	}
 
 	return dept, nil
 }
 
-func (s *DepartmentService) checkCircularDependency(deptID int, newParentID int) error {
+func (s *DepartmentService) checkCircularDependency(ctx context.Context, deptID int, newParentID int) error {
 	// Get all ancestors of the new parent
 	current := newParentID
 	visited := make(map[int]bool)
@@ -199,7 +195,7 @@ func (s *DepartmentService) checkCircularDependency(deptID int, newParentID int)
 		}
 		visited[current] = true
 
-		dept, err := s.deptRepo.GetByID(current)
+		dept, err := s.deptRepo.GetByID(ctx, current)
 		if err != nil {
 			return err
 		}
@@ -213,8 +209,8 @@ func (s *DepartmentService) checkCircularDependency(deptID int, newParentID int)
 	return nil
 }
 
-func (s *DepartmentService) DeleteDepartment(id int, mode string, reassignToDeptID *int) error {
-	dept, err := s.deptRepo.GetByID(id)
+func (s *DepartmentService) DeleteDepartment(ctx context.Context, id int, mode string, reassignToDeptID *int) error {
+	dept, err := s.deptRepo.GetByID(ctx, id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return fmt.Errorf("department not found")
@@ -225,7 +221,7 @@ func (s *DepartmentService) DeleteDepartment(id int, mode string, reassignToDept
 	switch mode {
 	case "cascade":
 		// Cascade delete is handled by database constraints
-		return s.deptRepo.Delete(dept.ID)
+		return s.deptRepo.Delete(ctx, dept.ID, mode)
 
 	case "reassign":
 		if reassignToDeptID == nil {
@@ -233,7 +229,7 @@ func (s *DepartmentService) DeleteDepartment(id int, mode string, reassignToDept
 		}
 
 		// Check if target department exists
-		_, err := s.deptRepo.GetByID(*reassignToDeptID)
+		_, err := s.deptRepo.GetByID(ctx, *reassignToDeptID)
 		if err != nil {
 			if err == gorm.ErrRecordNotFound {
 				return fmt.Errorf("target department not found")
@@ -246,8 +242,8 @@ func (s *DepartmentService) DeleteDepartment(id int, mode string, reassignToDept
 			return fmt.Errorf("cannot reassign to the same department")
 		}
 
-		// Get all employees in this department and all child departments
-		employees, err := s.deptRepo.GetAllEmployeesInDepartmentAndChildren(id)
+		// Get all employees in this department
+		employees, err := s.empRepo.GetByDepartmentID(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -255,35 +251,22 @@ func (s *DepartmentService) DeleteDepartment(id int, mode string, reassignToDept
 		// Reassign all employees to target department
 		for _, emp := range employees {
 			emp.DepartmentID = *reassignToDeptID
-		}
-
-		// Update employees in a transaction would be better, but for simplicity:
-		if len(employees) > 0 {
-			// Get all descendant department IDs
-			descendantIDs, err := s.deptRepo.GetAllDescendantIDs(id)
-			if err != nil {
+			if err := s.empRepo.Update(ctx, emp); err != nil {
 				return err
 			}
-
-			// Reassign employees from all descendants
-			for _, deptID := range descendantIDs {
-				if err := s.deptRepo.ReassignEmployees(deptID, *reassignToDeptID); err != nil {
-					return err
-				}
-			}
 		}
 
-		// Delete the department (cascade will delete child departments)
-		return s.deptRepo.Delete(dept.ID)
+		// Delete the department
+		return s.deptRepo.Delete(ctx, dept.ID, mode)
 
 	default:
 		return fmt.Errorf("invalid mode: must be 'cascade' or 'reassign'")
 	}
 }
 
-func (s *DepartmentService) CreateEmployee(deptID int, fullName, position string, hiredAt sql.NullTime) (*models.Employee, error) {
+func (s *DepartmentService) CreateEmployee(ctx context.Context, deptID int, fullName, position string, hiredAt sql.NullTime) (*models.Employee, error) {
 	// Check if department exists
-	_, err := s.deptRepo.GetByID(deptID)
+	_, err := s.deptRepo.GetByID(ctx, deptID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("department not found")
@@ -309,7 +292,7 @@ func (s *DepartmentService) CreateEmployee(deptID int, fullName, position string
 		HiredAt:      hiredAt,
 	}
 
-	if err := s.empRepo.Create(emp); err != nil {
+	if err := s.empRepo.Create(ctx, emp); err != nil {
 		return nil, err
 	}
 

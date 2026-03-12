@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"organizational-api/internal/logger"
 	"organizational-api/internal/models"
-	"organizational-api/internal/repository"
 	"organizational-api/internal/repository/mocks"
 	"organizational-api/internal/service"
 	"testing"
@@ -18,7 +18,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupMockHandler(t *testing.T) (*DepartmentHandler, repository.DepartmentRepo, repository.EmployeeRepo) {
+func setupMockHandler(t *testing.T) (*DepartmentHandler, *mocks.MockDepartmentRepository, *mocks.MockEmployeeRepository) {
+	logger.Init()
+
 	ctrl := gomock.NewController(t)
 
 	deptRepo := mocks.NewMockDepartmentRepository(ctrl)
@@ -71,7 +73,6 @@ func TestGetDepartment(t *testing.T) {
 
 	companyID := 1
 	engID := 2
-	backendID := 3
 
 	// Мокаем получение компании
 	deptRepo.EXPECT().
@@ -81,20 +82,24 @@ func TestGetDepartment(t *testing.T) {
 			Name: "Company",
 		}, nil)
 
-	// Мокаем получение детей (depth=2)
-	deptRepo.EXPECT().
-		GetChildren(gomock.Any(), companyID, 2).
-		Return([]*models.Department{
-			{ID: engID, Name: "Engineering", ParentID: &companyID},
-			{ID: backendID, Name: "Backend", ParentID: &engID},
-		}, nil)
-
 	// Мокаем сотрудников компании
 	empRepo.EXPECT().
 		GetByDepartmentID(gomock.Any(), companyID).
 		Return([]*models.Employee{
 			{ID: 100, FullName: "CEO", Position: "Chief Executive", DepartmentID: companyID},
 		}, nil)
+
+	// Мокаем получение детей (depth=2, но передается 1 как оставшаяся глубина)
+	deptRepo.EXPECT().
+		GetChildren(gomock.Any(), companyID, 1).
+		Return([]*models.Department{
+			{ID: engID, Name: "Engineering", ParentID: &companyID},
+		}, nil)
+
+	// Мокаем сотрудников для Engineering
+	empRepo.EXPECT().
+		GetByDepartmentID(gomock.Any(), engID).
+		Return([]*models.Employee{}, nil)
 
 	url := fmt.Sprintf("/departments/%d?depth=2", companyID)
 	req := httptest.NewRequest(http.MethodGet, url, nil)
@@ -116,7 +121,7 @@ func TestGetDepartment(t *testing.T) {
 
 	children, ok := result["children"].([]interface{})
 	require.True(t, ok)
-	assert.Len(t, children, 1) // Только прямые дети на depth=2, но структура может отличаться — подстрой под свой response
+	assert.Len(t, children, 1)
 }
 
 func TestUpdateDepartment(t *testing.T) {
@@ -164,13 +169,16 @@ func TestDeleteDepartment(t *testing.T) {
 
 	engID := 2
 
+	// Сначала GetByID для проверки существования
+	deptRepo.EXPECT().
+		GetByID(gomock.Any(), engID).
+		Return(&models.Department{ID: engID, Name: "Engineering"}, nil)
+
+	// Затем Delete
 	deptRepo.EXPECT().
 		Delete(gomock.Any(), engID, "cascade").
 		Return(nil).
 		Times(1)
-
-	// Если handler после Delete проверяет отсутствие — можно замокать GetByID
-	// Но обычно Delete возвращает 204 и всё
 
 	url := fmt.Sprintf("/departments/%d?mode=cascade", engID)
 	req := httptest.NewRequest(http.MethodDelete, url, nil)
@@ -182,10 +190,16 @@ func TestDeleteDepartment(t *testing.T) {
 }
 
 func TestCreateEmployee(t *testing.T) {
-	handler, _, empRepo := setupMockHandler(t)
+	handler, deptRepo, empRepo := setupMockHandler(t)
 
 	companyID := 1
 
+	// Сначала проверка существования департамента
+	deptRepo.EXPECT().
+		GetByID(gomock.Any(), companyID).
+		Return(&models.Department{ID: companyID, Name: "Company"}, nil)
+
+	// Затем создание сотрудника
 	empRepo.EXPECT().
 		Create(gomock.Any(), gomock.AssignableToTypeOf(&models.Employee{})).
 		DoAndReturn(func(ctx context.Context, emp *models.Employee) error {
